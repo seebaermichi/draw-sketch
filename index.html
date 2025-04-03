@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Garden Drawing Tool (Movable Labels)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <style>
+    canvas {
+      touch-action: none;
+      cursor: crosshair;
+    }
+  </style>
+</head>
+<body class="bg-gray-100 p-4">
+  <div x-data="drawingApp()" x-init="init()" class="max-w-6xl mx-auto space-y-4">
+    <h1 class="text-2xl font-bold text-center">Garden Drawing Tool</h1>
+
+    <!-- Tool Buttons -->
+    <div class="flex flex-wrap gap-2 justify-center">
+      <template x-for="t in ['freehand', 'line', 'rectangle', 'circle', 'label']" :key="t">
+        <button
+          @click="setTool(t)"
+          :class="tool === t ? 'bg-blue-800' : 'bg-blue-600'"
+          class="text-white px-4 py-2 rounded"
+          x-text="t.charAt(0).toUpperCase() + t.slice(1)"
+        ></button>
+      </template>
+      <button @click="clearCanvas()" class="bg-red-600 text-white px-4 py-2 rounded">🗑️ Clear</button>
+      <button @click="saveCanvas()" class="bg-green-600 text-white px-4 py-2 rounded">💾 Save</button>
+    </div>
+
+    <!-- Canvas -->
+    <canvas
+      id="canvas"
+      width="1000" height="700"
+      class="w-full border rounded bg-white"
+      @mousedown="start($event)"
+      @mousemove="move($event)"
+      @mouseup="end($event)"
+      @mouseleave="end($event)"
+      @touchstart="start($event)"
+      @touchmove="move($event)"
+      @touchend="end($event)"
+    ></canvas>
+
+    <!-- Download Link -->
+    <a
+      x-show="downloadUrl"
+      :href="downloadUrl"
+      download="garden-sketch.png"
+      class="text-blue-600 underline text-center block"
+    >
+      Download your image
+    </a>
+  </div>
+
+  <script>
+    function drawingApp() {
+      return {
+        tool: 'rectangle',
+        canvas: null,
+        ctx: null,
+        shapes: [],
+        current: null,
+        isDrawing: false,
+        selectedIndex: -1,
+        dragOffset: { x: 0, y: 0 },
+        resizing: false,
+        resizingHandle: null,
+        downloadUrl: null,
+
+        init() {
+          this.canvas = document.getElementById('canvas');
+          this.ctx = this.canvas.getContext('2d');
+          this.resizeCanvas();
+        },
+
+        resizeCanvas() {
+            this.canvas.width = this.canvas.offsetWidth;
+            this.canvas.height = this.canvas.offsetHeight;
+          },
+
+        setTool(t) {
+          this.tool = t;
+          this.selectedIndex = -1;
+        },
+
+        getPos(e) {
+          const rect = this.canvas.getBoundingClientRect();
+          const evt = e.touches ? e.touches[0] : e;
+          const scaleX = this.canvas.width / rect.width;
+          const scaleY = this.canvas.height / rect.height;
+          return {
+            x: (evt.clientX - rect.left) * scaleX,
+            y: (evt.clientY - rect.top) * scaleY
+          };
+        },
+
+        start(e) {
+          e.preventDefault();
+          const pos = this.getPos(e);
+          this.downloadUrl = null;
+
+          if (this.tool === 'label') {
+            const text = prompt("Enter label text:");
+            if (text) {
+              this.shapes.push({ type: 'label', x: pos.x, y: pos.y, text });
+              this.redraw();
+            }
+            return;
+          }
+
+          const shape = this.findShapeAt(pos);
+          if (shape) {
+            this.selectedIndex = this.shapes.indexOf(shape);
+            this.dragOffset = { x: pos.x - shape.x, y: pos.y - shape.y };
+            return;
+          }
+
+          this.selectedIndex = -1;
+          this.isDrawing = true;
+          this.current = { type: this.tool, x: pos.x, y: pos.y };
+
+          if (this.tool === 'freehand') {
+            this.current.points = [{ x: pos.x, y: pos.y }];
+          }
+        },
+
+        move(e) {
+          const pos = this.getPos(e);
+          this.canvas.style.cursor = this.getCursorStyle(pos);
+
+          if (!this.isDrawing && this.selectedIndex !== -1) {
+            const shape = this.shapes[this.selectedIndex];
+            const dx = pos.x - shape.x - this.dragOffset.x;
+            const dy = pos.y - shape.y - this.dragOffset.y;
+            shape.x += dx;
+            shape.y += dy;
+
+            if (shape.type === 'freehand') {
+              shape.points = shape.points.map(p => ({
+                x: p.x + dx,
+                y: p.y + dy
+              }));
+            }
+
+            this.redraw();
+            this.dragOffset = { x: pos.x - shape.x, y: pos.y - shape.y };
+            return;
+          }
+
+          if (this.isDrawing) {
+            if (this.tool === 'freehand') {
+              this.current.points.push({ x: pos.x, y: pos.y });
+              this.redraw();
+              this.drawShape(this.current);
+            } else {
+              this.current.width = pos.x - this.current.x;
+              this.current.height = pos.y - this.current.y;
+              if (this.tool === 'circle') {
+                this.current.radius = Math.hypot(this.current.width, this.current.height);
+              }
+              this.redraw();
+              this.drawShape(this.current);
+            }
+          }
+        },
+
+        end(e) {
+          if (this.isDrawing) {
+            this.shapes.push({ ...this.current });
+          }
+          this.isDrawing = false;
+          this.current = null;
+        },
+
+        clearCanvas() {
+          this.shapes = [];
+          this.selectedIndex = -1;
+          this.redraw();
+        },
+
+        saveCanvas() {
+          this.downloadUrl = this.canvas.toDataURL('image/png');
+        },
+
+        drawShape(s, highlight = false) {
+          const ctx = this.ctx;
+          ctx.lineWidth = 2;
+
+          if (s.type === 'label') {
+            ctx.font = "16px sans-serif";
+            ctx.fillStyle = "black";
+            ctx.fillText(s.text, s.x, s.y);
+            if (highlight) {
+              const width = ctx.measureText(s.text).width + 4;
+              const height = 20;
+              ctx.strokeStyle = "blue";
+              ctx.setLineDash([4, 2]);
+              ctx.strokeRect(s.x - 2, s.y - height + 4, width, height);
+              ctx.setLineDash([]);
+            }
+            return;
+          }
+
+          ctx.beginPath();
+          ctx.strokeStyle = highlight ? 'blue' : 'black';
+
+          if (s.type === 'rectangle') {
+            ctx.rect(s.x, s.y, s.width, s.height);
+          }
+
+          if (s.type === 'circle') {
+            ctx.arc(s.x, s.y, s.radius, 0, 2 * Math.PI);
+          }
+
+          if (s.type === 'line') {
+            ctx.moveTo(s.x, s.y);
+            ctx.lineTo(s.x + s.width, s.y + s.height);
+          }
+
+          if (s.type === 'freehand') {
+            const pts = s.points;
+            if (pts.length > 1) {
+              ctx.moveTo(pts[0].x, pts[0].y);
+              for (let i = 1; i < pts.length; i++) {
+                ctx.lineTo(pts[i].x, pts[i].y);
+              }
+            }
+          }
+
+          ctx.stroke();
+        },
+
+        redraw() {
+          this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+          this.shapes.forEach((s, i) => this.drawShape(s, i === this.selectedIndex));
+        },
+
+        findShapeAt(pos) {
+          return [...this.shapes].reverse().find(s => {
+            if (s.type === 'rectangle') {
+              return pos.x >= s.x && pos.x <= s.x + s.width &&
+                     pos.y >= s.y && pos.y <= s.y + s.height;
+            }
+            if (s.type === 'circle') {
+              const dx = pos.x - s.x;
+              const dy = pos.y - s.y;
+              return Math.sqrt(dx * dx + dy * dy) <= s.radius;
+            }
+            if (s.type === 'line') {
+              const dist = Math.abs((s.height) * pos.x - (s.width) * pos.y + s.x * s.y + s.width * s.y - s.y * s.x - s.height * s.x) /
+                           Math.sqrt(Math.pow(s.width, 2) + Math.pow(s.height, 2));
+              return dist < 10;
+            }
+            if (s.type === 'freehand') {
+              return s.points.some(p =>
+                Math.hypot(p.x - pos.x, p.y - pos.y) < 10
+              );
+            }
+            if (s.type === 'label') {
+              const textWidth = this.ctx.measureText(s.text).width;
+              return pos.x >= s.x && pos.x <= s.x + textWidth &&
+                     pos.y >= s.y - 16 && pos.y <= s.y;
+            }
+            return false;
+          });
+        },
+
+        getCursorStyle(pos) {
+          const shape = this.findShapeAt(pos);
+          if (shape) {
+            return shape.type === 'label' ? 'move' : 'move';
+          }
+          return this.tool === 'label' ? 'text' : 'crosshair';
+        }
+      };
+    }
+  </script>
+</body>
+</html>
