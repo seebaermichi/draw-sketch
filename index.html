@@ -9,7 +9,6 @@
   <style>
     canvas {
       touch-action: none;
-      cursor: crosshair;
     }
   </style>
 </head>
@@ -70,6 +69,8 @@
         resizing: false,
         resizingHandle: null,
         downloadUrl: null,
+        isDragging: false,
+        isRotating: false,
 
         init() {
           this.canvas = document.getElementById('canvas');
@@ -103,6 +104,21 @@
           const pos = this.getPos(e);
           this.downloadUrl = null;
 
+          const rotatingIndex = this.getRotationHandleAt(pos);
+          if (rotatingIndex !== -1) {
+            this.selectedIndex = rotatingIndex;
+            this.isRotating = true;
+            return;
+          }
+
+          const shape = this.findShapeAt(pos);
+          if (shape) {
+            this.selectedIndex = this.shapes.indexOf(shape);
+            this.dragOffset = { x: pos.x - shape.x, y: pos.y - shape.y };
+            this.isDragging = true;
+            return;
+          }
+
           if (this.tool === 'label') {
             const text = prompt("Enter label text:");
             if (text) {
@@ -112,16 +128,14 @@
             return;
           }
 
-          const shape = this.findShapeAt(pos);
-          if (shape) {
-            this.selectedIndex = this.shapes.indexOf(shape);
-            this.dragOffset = { x: pos.x - shape.x, y: pos.y - shape.y };
-            return;
-          }
-
           this.selectedIndex = -1;
           this.isDrawing = true;
           this.current = { type: this.tool, x: pos.x, y: pos.y };
+
+          if (this.tool === 'line') {
+            this.current.length = 0;
+            this.current.angle = 0;
+          }
 
           if (this.tool === 'freehand') {
             this.current.points = [{ x: pos.x, y: pos.y }];
@@ -132,7 +146,17 @@
           const pos = this.getPos(e);
           this.canvas.style.cursor = this.getCursorStyle(pos);
 
-          if (!this.isDrawing && this.selectedIndex !== -1) {
+          if (this.isRotating && this.selectedIndex !== -1) {
+            const shape = this.shapes[this.selectedIndex];
+            const dx = pos.x - shape.x;
+            const dy = pos.y - shape.y;
+            shape.angle = Math.atan2(dy, dx);
+            shape.length = Math.hypot(dx, dy);
+            this.redraw();
+            return;
+          }
+
+          if (this.isDragging && this.selectedIndex !== -1) {
             const shape = this.shapes[this.selectedIndex];
             const dx = pos.x - shape.x - this.dragOffset.x;
             const dy = pos.y - shape.y - this.dragOffset.y;
@@ -152,6 +176,16 @@
           }
 
           if (this.isDrawing) {
+            if (this.tool === 'line') {
+              const dx = pos.x - this.current.x;
+              const dy = pos.y - this.current.y;
+              this.current.length = Math.hypot(dx, dy);
+              this.current.angle = Math.atan2(dy, dx);
+              this.redraw();
+              this.drawShape(this.current);
+              return;
+            }
+
             if (this.tool === 'freehand') {
               this.current.points.push({ x: pos.x, y: pos.y });
               this.redraw();
@@ -168,11 +202,14 @@
           }
         },
 
+
         end(e) {
           if (this.isDrawing) {
             this.shapes.push({ ...this.current });
           }
           this.isDrawing = false;
+          this.isDragging = false;
+          this.isRotating = false;
           this.current = null;
         },
 
@@ -217,8 +254,22 @@
           }
 
           if (s.type === 'line') {
-            ctx.moveTo(s.x, s.y);
-            ctx.lineTo(s.x + s.width, s.y + s.height);
+            ctx.save();
+            ctx.translate(s.x, s.y);
+            ctx.rotate(s.angle);
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(s.length, 0);
+            ctx.stroke();
+
+            // Always show rotation handle
+            ctx.beginPath();
+            ctx.arc(s.length, 0, 8, 0, 2 * Math.PI);
+            ctx.fillStyle = highlight ? "red" : "rgba(255, 0, 0, 0.5)";
+            ctx.fill();
+
+            ctx.restore();
+            return;
           }
 
           if (s.type === 'freehand') {
@@ -251,9 +302,14 @@
               return Math.sqrt(dx * dx + dy * dy) <= s.radius;
             }
             if (s.type === 'line') {
-              const dist = Math.abs((s.height) * pos.x - (s.width) * pos.y + s.x * s.y + s.width * s.y - s.y * s.x - s.height * s.x) /
-                           Math.sqrt(Math.pow(s.width, 2) + Math.pow(s.height, 2));
-              return dist < 10;
+              const dx = pos.x - s.x;
+              const dy = pos.y - s.y;
+
+              // Rotate mouse position into line-local coordinates
+              const rx = Math.cos(-s.angle) * dx - Math.sin(-s.angle) * dy;
+              const ry = Math.sin(-s.angle) * dx + Math.cos(-s.angle) * dy;
+
+              return rx >= 0 && rx <= s.length && Math.abs(ry) < 6;
             }
             if (s.type === 'freehand') {
               return s.points.some(p =>
@@ -270,12 +326,33 @@
         },
 
         getCursorStyle(pos) {
+          const handleIndex = this.getRotationHandleAt(pos);
+          if (handleIndex !== -1) {
+            return 'crosshair'; // or try 'grab', 'alias', or 'pointer'
+          }
+
           const shape = this.findShapeAt(pos);
           if (shape) {
-            return shape.type === 'label' ? 'move' : 'move';
+            return 'move';
           }
+
           return this.tool === 'label' ? 'text' : 'crosshair';
-        }
+        },
+
+        getRotationHandleAt(pos) {
+          return this.shapes.findIndex(s => {
+            if (s.type !== 'line') return false;
+
+            const dx = pos.x - s.x;
+            const dy = pos.y - s.y;
+
+            // Inverse rotate
+            const rx = Math.cos(-s.angle) * dx - Math.sin(-s.angle) * dy;
+            const ry = Math.sin(-s.angle) * dx + Math.cos(-s.angle) * dy;
+
+            return Math.hypot(rx - s.length, ry) < 10;
+          });
+        },
       };
     }
   </script>
