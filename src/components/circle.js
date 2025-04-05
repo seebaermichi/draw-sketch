@@ -2,7 +2,6 @@ export function drawCircle(ctx, shape, highlight = false) {
     ctx.beginPath();
     ctx.arc(shape.x, shape.y, shape.radius, 0, 2 * Math.PI);
     ctx.strokeStyle = highlight ? 'blue' : 'black';
-    ctx.lineWidth = 2;
     ctx.stroke();
 
     if (highlight) {

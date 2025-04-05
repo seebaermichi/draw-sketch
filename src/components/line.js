@@ -6,7 +6,6 @@ export function drawLine(ctx, shape, highlight = false) {
     ctx.moveTo(0, 0);
     ctx.lineTo(shape.length, 0);
     ctx.strokeStyle = highlight ? 'blue' : 'black';
-    ctx.lineWidth = 2;
     ctx.stroke();
 
     // Resize handle

@@ -49,14 +49,25 @@ export default function drawingApp() {
 
     hoverInfo: null,
 
+    hasInitialized: false,
+
     // Called once at initialization
     init() {
+      if (this.hasInitialized) return;
+      this.hasInitialized = true;
+
       this.canvas = document.getElementById('canvas');
       this.ctx = this.canvas.getContext('2d');
-      this.resizeCanvas();
-      this.computeScaleAndDrawGarden();
+
+      this.resizeCanvas();                 // ✅ Make sure canvas has correct size first
+      this.restoreFromLocalStorage();     // ✅ Then load saved values + draw garden border
 
       window.addEventListener('keydown', (e) => {
+        const tag = document.activeElement.tagName.toLowerCase();
+
+        // Don't trigger hotkeys when typing in input/textarea
+        if (tag === 'input' || tag === 'textarea') return;
+
         if ((e.key === 'Delete' || e.key === 'Backspace') && this.selectedIndex !== -1) {
           this.deleteSelected();
         } else if (e.ctrlKey && e.key === 'z') {
@@ -66,6 +77,13 @@ export default function drawingApp() {
           this.redo();
         }
       });
+    },
+
+    updateGardenSize(width, height) {
+      this.gardenWidthMeters = width;
+      this.gardenHeightMeters = height;
+      this.computeScaleAndDrawGarden(); // this will redraw with updated proportions
+      this.saveToLocalStorage();
     },
 
     pushToUndoStack() {
@@ -81,6 +99,7 @@ export default function drawingApp() {
         this.shapes = JSON.parse(lastState);
         this.selectedIndex = -1;
         this.redraw();
+        this.saveToLocalStorage();
       }
     },
 
@@ -91,6 +110,7 @@ export default function drawingApp() {
         this.shapes = JSON.parse(nextState);
         this.selectedIndex = -1;
         this.redraw();
+        this.saveToLocalStorage();
       }
     },
 
@@ -104,6 +124,11 @@ export default function drawingApp() {
     setTool(t) {
       this.tool = t;
       this.selectedIndex = -1; // deselect any selected shape
+      this.saveToLocalStorage();
+    },
+
+    get shape() {
+      return this.shapes[this.selectedIndex] ?? {};
     },
 
     // Helper to get canvas-relative coordinates from a mouse/touch event
@@ -314,6 +339,7 @@ export default function drawingApp() {
       // Save the drawn shape to the array
       if (this.isDrawing && this.current) {
         this.shapes.push({ ...this.current });
+        this.saveToLocalStorage();
       }
       this.isDrawing = false;
       this.isDragging = false;
@@ -328,11 +354,48 @@ export default function drawingApp() {
       this.shapes = [];
       this.selectedIndex = -1;
       this.redraw();
+      this.saveToLocalStorage();
+    },
+
+    saveToLocalStorage() {
+      localStorage.setItem(`${window.location.href}_shapes`, JSON.stringify(this.shapes));
+      localStorage.setItem(`${window.location.href}_gardenWidth`, this.gardenWidthMeters);
+      localStorage.setItem(`${window.location.href}_gardenHeight`, this.gardenHeightMeters);
+    },
+
+    restoreFromLocalStorage() {
+      const shapes = localStorage.getItem(`${window.location.href}_shapes`);
+      const width = localStorage.getItem(`${window.location.href}_gardenWidth`);
+      const height = localStorage.getItem(`${window.location.href}_gardenHeight`);
+
+      if (shapes) {
+        this.shapes = JSON.parse(shapes);
+      }
+
+      if (width && height) {
+        this.gardenWidthMeters = parseFloat(width);
+        this.gardenHeightMeters = parseFloat(height);
+      }
+
+      this.computeScaleAndDrawGarden(); // also redraws
     },
 
     // Creates an image URL of the canvas for download
     saveCanvas() {
+      // Temporarily draw white background
+      const original = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+
+      this.ctx.save();
+      this.ctx.globalCompositeOperation = 'destination-over';
+      this.ctx.fillStyle = 'white';
+      this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+      this.ctx.restore();
+
+      // Generate image
       this.downloadUrl = this.canvas.toDataURL('image/png');
+
+      // Restore canvas to previous state
+      this.ctx.putImageData(original, 0, 0);
     },
 
     // Draw one shape (with optional highlight)
@@ -364,9 +427,31 @@ export default function drawingApp() {
         this.ctx.setLineDash([5, 5]);
         this.ctx.strokeRect(this.gardenRect.x, this.gardenRect.y, this.gardenRect.width, this.gardenRect.height);
         this.ctx.setLineDash([]);
+
+        // 🏷 Show garden dimensions
+        const label = `${this.gardenWidthMeters.toFixed(2)}m × ${this.gardenHeightMeters.toFixed(2)}m`;
+        this.ctx.save();
+        this.ctx.font = '14px sans-serif';
+        this.ctx.fillStyle = 'black';
+        this.ctx.strokeStyle = 'white';
+        this.ctx.lineWidth = 3;
+
+        const labelX = this.gardenRect.x + this.gardenRect.width / 2 - this.ctx.measureText(label).width / 2;
+        const labelY = this.gardenRect.y - 10;
+
+        this.ctx.strokeText(label, labelX, labelY);
+        this.ctx.fillText(label, labelX, labelY);
+        this.ctx.restore();
       }
 
-      this.shapes.forEach((s, i) => this.drawShape(s, i === this.selectedIndex));
+      this.shapes.forEach((s, i) => {
+        this.drawShape(s, i === this.selectedIndex);
+
+        // ✅ Always draw size label for selected shape
+        if (i === this.selectedIndex && s.type !== 'label' && s.type !== 'freehand') {
+          this.drawMeasurementTooltip(s);
+        }
+      });
 
       if (this.hoverInfo && this.selectedIndex !== -1 && this.isDragging) {
         const shape = this.shapes[this.selectedIndex];
@@ -432,6 +517,7 @@ export default function drawingApp() {
         this.shapes.splice(this.selectedIndex, 1); // Remove selected shape
         this.selectedIndex = -1; // Deselect
         this.redraw(); // Redraw canvas
+        this.saveToLocalStorage();
       }
     },
 
@@ -456,6 +542,34 @@ export default function drawingApp() {
       this.gardenRect = { x, y, width, height };
 
       this.redraw();
+
+      // Draw border labels after redraw
+      this.ctx.save();
+      this.ctx.font = '14px sans-serif';
+      this.ctx.fillStyle = 'black';
+      this.ctx.strokeStyle = 'white';
+      this.ctx.lineWidth = 3;
+
+      // Width label (top center)
+      const widthLabel = `${this.gardenWidthMeters}m`;
+      const widthX = x + width / 2 - this.ctx.measureText(widthLabel).width / 2;
+      const widthY = y - 10;
+      this.ctx.strokeText(widthLabel, widthX, widthY);
+      this.ctx.fillText(widthLabel, widthX, widthY);
+
+      // Height label (left center, rotated)
+      const heightLabel = `${this.gardenHeightMeters}m`;
+      const heightX = x - 10;
+      const heightY = y + height / 2;
+
+      this.ctx.save();
+      this.ctx.translate(heightX, heightY);
+      this.ctx.rotate(-Math.PI / 2);
+      this.ctx.strokeText(heightLabel, -this.ctx.measureText(heightLabel).width / 2, -4);
+      this.ctx.fillText(heightLabel, -this.ctx.measureText(heightLabel).width / 2, -4);
+      this.ctx.restore();
+
+      this.ctx.restore();
     },
 
     drawMeasurementTooltip(s) {
@@ -490,5 +604,104 @@ export default function drawingApp() {
       ctx.fillText(label, x, y);
       ctx.restore();
     },
+
+    getShapeXInMeters() {
+      const shape = this.shapes[this.selectedIndex];
+      return shape ? ((shape.x - this.gardenRect.x) / this.scale).toFixed(2) : '';
+    },
+
+    getShapeYInMeters() {
+      const shape = this.shapes[this.selectedIndex];
+      return shape ? ((shape.y - this.gardenRect.y) / this.scale).toFixed(2) : '';
+    },
+
+    updateShapeXInMeters(val) {
+      const shape = this.shapes[this.selectedIndex];
+      if (shape) {
+        shape.x = this.gardenRect.x + parseFloat(val) * this.scale;
+        this.redraw();
+        this.saveToLocalStorage();
+      }
+    },
+
+    updateShapeYInMeters(val) {
+      const shape = this.shapes[this.selectedIndex];
+      if (shape) {
+        shape.y = this.gardenRect.y + parseFloat(val) * this.scale;
+        this.redraw();
+        this.saveToLocalStorage();
+      }
+    },
+
+    getShapeWidthInMeters() {
+      const shape = this.shapes[this.selectedIndex];
+      return shape ? (shape.width / this.scale).toFixed(2) : '';
+    },
+
+    getShapeHeightInMeters() {
+      const shape = this.shapes[this.selectedIndex];
+      return shape ? (shape.height / this.scale).toFixed(2) : '';
+    },
+
+    updateShapeWidthInMeters(val) {
+      const shape = this.shapes[this.selectedIndex];
+      if (shape) {
+        shape.width = parseFloat(val) * this.scale;
+        this.redraw();
+        this.saveToLocalStorage();
+      }
+    },
+
+    updateShapeHeightInMeters(val) {
+      const shape = this.shapes[this.selectedIndex];
+      if (shape) {
+        shape.height = parseFloat(val) * this.scale;
+        this.redraw();
+        this.saveToLocalStorage();
+      }
+    },
+
+    getLineLengthInMeters() {
+      const shape = this.shapes[this.selectedIndex];
+      return shape && shape.type === 'line' ? (shape.length / this.scale).toFixed(2) : '';
+    },
+
+    updateLineLengthInMeters(val) {
+      const shape = this.shapes[this.selectedIndex];
+      if (shape && shape.type === 'line') {
+        shape.length = parseFloat(val) * this.scale;
+        this.redraw();
+        this.saveToLocalStorage();
+      }
+    },
+
+    getCircleRadiusInMeters() {
+      const shape = this.shapes[this.selectedIndex];
+      return shape && shape.type === 'circle' ? (shape.radius / this.scale).toFixed(2) : '';
+    },
+
+    updateCircleRadiusInMeters(val) {
+      const shape = this.shapes[this.selectedIndex];
+      if (shape && shape.type === 'circle') {
+        shape.radius = parseFloat(val) * this.scale;
+        this.redraw();
+        this.saveToLocalStorage();
+      }
+    },
+
+    getCircleDiameterInMeters() {
+      const shape = this.shapes[this.selectedIndex];
+      return shape && shape.type === 'circle' ? ((shape.radius * 2) / this.scale).toFixed(2) : '';
+    },
+
+    updateCircleDiameterInMeters(val) {
+      const shape = this.shapes[this.selectedIndex];
+      if (shape && shape.type === 'circle') {
+        shape.radius = (parseFloat(val) / 2) * this.scale;
+        this.redraw();
+        this.saveToLocalStorage();
+      }
+    },
+
   };
 }

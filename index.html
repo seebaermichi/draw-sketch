@@ -36,18 +36,120 @@
       <button @click="saveCanvas()" class="bg-green-600 text-white px-4 py-2 rounded">💾 Save</button>
     </div>
 
-    <canvas
-      id="canvas"
-      width="1000" height="700"
-      class="w-full border rounded bg-white"
-      @mousedown="start($event)"
-      @mousemove="move($event)"
-      @mouseup="end($event)"
-      @mouseleave="end($event)"
-      @touchstart="start($event)"
-      @touchmove="move($event)"
-      @touchend="end($event)"
-    ></canvas>
+    <div class="lg:grid lg:grid-cols-12">
+      <div class="lg:col-span-3 p-2">
+        <div class="flex flex-col">
+          <h3>Garden size</h3>
+          <label for="garden-width">Width</label>
+          <input
+            class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
+            type="number"
+            id="garden-width"
+            step="0.01"
+            :value="gardenWidthMeters"
+            @blur="updateGardenSize(parseFloat($event.target.value), gardenHeightMeters)"
+          >
+
+          <label for="garden-height">Length</label>
+          <input
+            class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
+            type="number"
+            step="0.01"
+            id="garden-height"
+            :value="gardenHeightMeters"
+            @blur="updateGardenSize(gardenWidthMeters, parseFloat($event.target.value))">
+        </div>
+
+        <div class="flex flex-col" x-show="selectedIndex !== -1">
+          <h3>Position</h3>
+          <label for="left">From left border</label>
+          <input
+            class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
+            type="number"
+            step="0.01"
+            id="left"
+            :value="getShapeXInMeters()"
+            @blur="updateShapeXInMeters($event.target.value)"
+          >
+
+          <label for="top">From top border</label>
+          <input
+            class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
+            type="number"
+            step="0.01"
+            id="top"
+            :value="getShapeYInMeters()"
+            @blur="updateShapeYInMeters($event.target.value)">
+        </div>
+
+        <div class="flex flex-col" x-show="shapes[selectedIndex]?.type === 'rectangle'">
+          <h3>Rectangle size</h3>
+          <label for="rectangle-width">Width</label>
+          <input
+            class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
+            type="number"
+            step="0.01"
+            id="rectangle-width"
+            :value="getShapeWidthInMeters()"
+            @blur="updateShapeWidthInMeters($event.target.value)">
+
+          <label for="rectangle-height">Length</label>
+          <input
+            class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
+            type="number"
+            step="0.01"
+            id="rectangle-height"
+            :value="getShapeHeightInMeters()"
+            @blur="updateShapeHeightInMeters($event.target.value)">
+        </div>
+
+        <div class="flex flex-col" x-show="shapes[selectedIndex]?.type === 'line'">
+          <h3>Line length</h3>
+          <label for="line-length">Length</label>
+          <input
+            class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
+            type="number"
+            step="0.01"
+            id="line-length"
+            :value="getLineLengthInMeters()"
+            @blur="updateLineLengthInMeters($event.target.value)">
+        </div>
+
+        <div class="flex flex-col" x-show="shapes[selectedIndex]?.type === 'circle'">
+          <h3>Circle size</h3>
+          <label for="circle-radius">Radius</label>
+          <input
+            class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
+            type="number"
+            step="0.01"
+            id="circle-radius"
+            :value="getCircleRadiusInMeters()"
+            @blur="updateCircleRadiusInMeters($event.target.value)">
+
+          <label for="circle-diameter">Diameter</label>
+          <input
+            class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
+            type="number"
+            step="0.01"
+            id="circle-diameter"
+            :value="getCircleDiameterInMeters()"
+            @blur="updateCircleDiameterInMeters($event.target.value)">
+        </div>
+      </div>
+
+      <canvas
+        id="canvas"
+        width="1000" height="700"
+        class="w-full border rounded bg-white lg:col-span-9"
+        @mousedown="start($event)"
+        @mousemove="move($event)"
+        @mouseup="end($event)"
+        @mouseleave="end($event)"
+        @touchstart="start($event)"
+        @touchmove="move($event)"
+        @touchend="end($event)"
+      ></canvas>
+    </div>
 
     <a
       x-show="downloadUrl"
