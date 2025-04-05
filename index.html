@@ -16,131 +16,132 @@
   <div x-data="drawingApp()" x-init="init()" class="max-w-6xl mx-auto space-y-4">
     <h1 class="text-2xl font-bold text-center">Garden Drawing Tool</h1>
 
-    <div class="flex flex-wrap gap-2 justify-center">
-      <template x-for="t in ['freehand', 'line', 'rectangle', 'circle', 'label']" :key="t">
-        <button
-          @click="setTool(t)"
-          :class="tool === t ? 'bg-blue-800' : 'bg-blue-600'"
-          class="text-white px-4 py-2 rounded"
-          x-text="t.charAt(0).toUpperCase() + t.slice(1)"
-        ></button>
-      </template>
-      <button @click="undo" class="bg-blue-500 text-white px-4 py-2 rounded disabled:opacity-50" :disabled="undoStack.length === 0">
-        ↩️ Undo
-      </button>
-      <button @click="redo" class="bg-blue-500 text-white px-4 py-2 rounded disabled:opacity-50" :disabled="redoStack.length === 0">
-        ↪️ Redo
-      </button>
-      <button @click="deleteSelected()" class="bg-yellow-600 text-white px-4 py-2 rounded" :disabled="selectedIndex === -1">🗑️ Delete</button>
-      <button @click="clearCanvas()" class="bg-red-600 text-white px-4 py-2 rounded">🗑️ Clear</button>
-      <button @click="saveCanvas()" class="bg-green-600 text-white px-4 py-2 rounded">💾 Save</button>
-    </div>
-
-    <div class="lg:grid lg:grid-cols-12">
-      <div class="lg:col-span-3 p-2">
-        <div class="flex flex-col">
-          <h3>Garden size</h3>
-          <label for="garden-width">Width</label>
-          <input
-            class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
-            type="number"
-            id="garden-width"
-            step="0.01"
-            :value="gardenWidthMeters"
-            @blur="updateGardenSize(parseFloat($event.target.value), gardenHeightMeters)"
-          >
-
-          <label for="garden-height">Length</label>
-          <input
-            class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
-            type="number"
-            step="0.01"
-            id="garden-height"
-            :value="gardenHeightMeters"
-            @blur="updateGardenSize(gardenWidthMeters, parseFloat($event.target.value))">
+    <div class="flex flex-wrap">
+      <div class="w-1/2 order-1 grid grid-cols-2 gap-4">
+        <div class="flex flex-col" x-show="shapes.length">
+          <h3>Elements</h3>
+          <ul class="space-y-1 mt-2">
+            <template x-for="(shape, index) in shapes" :key="index">
+              <li
+                @click="selectShape(index)"
+                class="flex items-center justify-between px-2 py-1 rounded cursor-pointer hover:bg-yellow-200"
+                :class="{ 'bg-yellow-300': isSelected(index) }"
+              >
+                <span x-text="shape.name" class="truncate mr-2"></span>
+                <button @click.stop="renameShape(index)">
+                  <svg class="h-4 w-4 text-gray-600 hover:text-black" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+                    <path d="M362.7 19.3L314.3 67.7 444.3 197.7l48.4-48.4c25-25 25-65.5 0-90.5L453.3 19.3c-25-25-65.5-25-90.5 0zm-71 71L58.6 323.5c-10.4 10.4-18 23.3-22.2 37.4L1 481.2C-1.5 489.7 .8 498.8 7 505s15.3 8.5 23.7 6.1l120.3-35.4c14.1-4.2 27-11.8 37.4-22.2L421.7 220.3 291.7 90.3z"/>
+                  </svg>
+                </button>
+              </li>
+            </template>
+          </ul>
         </div>
 
-        <div class="flex flex-col" x-show="selectedIndex !== -1">
-          <h3>Position</h3>
-          <label for="left">From left border</label>
-          <input
-            class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
-            type="number"
-            step="0.01"
-            id="left"
-            :value="getShapeXInMeters()"
-            @blur="updateShapeXInMeters($event.target.value)"
-          >
+        <div>
+          <div class="flex flex-col">
+            <h3>Garden size</h3>
+            <label for="garden-width">Width</label>
+            <input
+              class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
+              type="number"
+              id="garden-width"
+              step="0.01"
+              :value="gardenWidthMeters"
+              @blur="updateGardenSize(parseFloat($event.target.value), gardenHeightMeters)"
+            >
 
-          <label for="top">From top border</label>
-          <input
-            class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
-            type="number"
-            step="0.01"
-            id="top"
-            :value="getShapeYInMeters()"
-            @blur="updateShapeYInMeters($event.target.value)">
-        </div>
+            <label for="garden-height">Length</label>
+            <input
+              class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
+              type="number"
+              step="0.01"
+              id="garden-height"
+              :value="gardenHeightMeters"
+              @blur="updateGardenSize(gardenWidthMeters, parseFloat($event.target.value))">
+          </div>
 
-        <div class="flex flex-col" x-show="shapes[selectedIndex]?.type === 'rectangle'">
-          <h3>Rectangle size</h3>
-          <label for="rectangle-width">Width</label>
-          <input
-            class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
-            type="number"
-            step="0.01"
-            id="rectangle-width"
-            :value="getShapeWidthInMeters()"
-            @blur="updateShapeWidthInMeters($event.target.value)">
+          <div class="flex flex-col" x-show="selectedIndex !== -1">
+            <h3>Position</h3>
+            <label for="left">From left border</label>
+            <input
+              class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
+              type="number"
+              step="0.01"
+              id="left"
+              :value="getShapeXInMeters()"
+              @blur="updateShapeXInMeters($event.target.value)"
+            >
 
-          <label for="rectangle-height">Length</label>
-          <input
-            class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
-            type="number"
-            step="0.01"
-            id="rectangle-height"
-            :value="getShapeHeightInMeters()"
-            @blur="updateShapeHeightInMeters($event.target.value)">
-        </div>
+            <label for="top">From top border</label>
+            <input
+              class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
+              type="number"
+              step="0.01"
+              id="top"
+              :value="getShapeYInMeters()"
+              @blur="updateShapeYInMeters($event.target.value)">
+          </div>
 
-        <div class="flex flex-col" x-show="shapes[selectedIndex]?.type === 'line'">
-          <h3>Line length</h3>
-          <label for="line-length">Length</label>
-          <input
-            class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
-            type="number"
-            step="0.01"
-            id="line-length"
-            :value="getLineLengthInMeters()"
-            @blur="updateLineLengthInMeters($event.target.value)">
-        </div>
+          <div class="flex flex-col" x-show="shapes[selectedIndex]?.type === 'rectangle'">
+            <h3>Rectangle size</h3>
+            <label for="rectangle-width">Width</label>
+            <input
+              class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
+              type="number"
+              step="0.01"
+              id="rectangle-width"
+              :value="getShapeWidthInMeters()"
+              @blur="updateShapeWidthInMeters($event.target.value)">
 
-        <div class="flex flex-col" x-show="shapes[selectedIndex]?.type === 'circle'">
-          <h3>Circle size</h3>
-          <label for="circle-radius">Radius</label>
-          <input
-            class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
-            type="number"
-            step="0.01"
-            id="circle-radius"
-            :value="getCircleRadiusInMeters()"
-            @blur="updateCircleRadiusInMeters($event.target.value)">
+            <label for="rectangle-height">Length</label>
+            <input
+              class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
+              type="number"
+              step="0.01"
+              id="rectangle-height"
+              :value="getShapeHeightInMeters()"
+              @blur="updateShapeHeightInMeters($event.target.value)">
+          </div>
 
-          <label for="circle-diameter">Diameter</label>
-          <input
-            class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
-            type="number"
-            step="0.01"
-            id="circle-diameter"
-            :value="getCircleDiameterInMeters()"
-            @blur="updateCircleDiameterInMeters($event.target.value)">
+          <div class="flex flex-col" x-show="shapes[selectedIndex]?.type === 'line'">
+            <h3>Line length</h3>
+            <label for="line-length">Length</label>
+            <input
+              class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
+              type="number"
+              step="0.01"
+              id="line-length"
+              :value="getLineLengthInMeters()"
+              @blur="updateLineLengthInMeters($event.target.value)">
+          </div>
+
+          <div class="flex flex-col" x-show="shapes[selectedIndex]?.type === 'circle'">
+            <h3>Circle size</h3>
+            <label for="circle-radius">Radius</label>
+            <input
+              class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
+              type="number"
+              step="0.01"
+              id="circle-radius"
+              :value="getCircleRadiusInMeters()"
+              @blur="updateCircleRadiusInMeters($event.target.value)">
+
+            <label for="circle-diameter">Diameter</label>
+            <input
+              class="py-1.5 px-2 rounded-md mt-1 border border-stone-500"
+              type="number"
+              step="0.01"
+              id="circle-diameter"
+              :value="getCircleDiameterInMeters()"
+              @blur="updateCircleDiameterInMeters($event.target.value)">
+          </div>
         </div>
       </div>
 
       <canvas
         id="canvas"
-        width="1000" height="700"
-        class="w-full border rounded bg-white lg:col-span-9"
+        class="border rounded bg-white w-full order-3 h-screen"
         @mousedown="start($event)"
         @mousemove="move($event)"
         @mouseup="end($event)"
@@ -149,6 +150,31 @@
         @touchmove="move($event)"
         @touchend="end($event)"
       ></canvas>
+
+      <div class="w-1/2 order-2 p-1">
+        <div class="grid grid-cols-3">
+          <template x-for="t in ['freehand', 'line', 'rectangle', 'circle', 'label']" :key="t">
+            <button
+              @click="setTool(t)"
+              class="px-4 py-2 rounded border border-px"
+              x-text="t.charAt(0).toUpperCase() + t.slice(1)"
+            ></button>
+          </template>
+        </div>
+        <div class="grid grid-cols-3">
+          <button @click="undo" class="px-4 py-2 rounded border border-px disabled:opacity-50" :disabled="undoStack.length === 0">
+            ↩️ Undo
+          </button>
+          <button @click="redo" class="px-4 py-2 rounded border border-px disabled:opacity-50" :disabled="redoStack.length === 0">
+            ↪️ Redo
+          </button>
+        </div>
+        <div class="grid grid-cols-3">
+          <button @click="deleteSelected()" class="px-4 py-2 rounded border border-px" :disabled="selectedIndex === -1">🗑️ Delete</button>
+          <button @click="clearCanvas()" class="px-4 py-2 rounded border border-px">🗑️ Clear</button>
+          <button @click="saveCanvas()" class="px-4 py-2 rounded border border-px">💾 Save</button>
+        </div>
+      </div>
     </div>
 
     <a

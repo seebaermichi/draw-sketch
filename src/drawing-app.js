@@ -333,11 +333,33 @@ export default function drawingApp() {
       }
     },
 
+    isSelected(index) {
+      return this.selectedIndex === index;
+    },
+
+    selectShape(index) {
+      this.selectedIndex = index;
+      this.redraw();
+    },
+
+    renameShape(index) {
+      const shape = this.shapes[index];
+      const newName = prompt("Rename shape:", shape.name);
+      if (newName && newName.trim() !== '') {
+        shape.name = newName.trim();
+        this.saveToLocalStorage();
+      }
+    },
+
 
     // Called on mouse/touch up or leave
     end() {
       // Save the drawn shape to the array
       if (this.isDrawing && this.current) {
+        // Assign a default name based on type + count
+        const count = this.shapes.filter(s => s.type === this.current.type).length + 1;
+        this.current.name = `${this.current.type.charAt(0).toUpperCase() + this.current.type.slice(1)} ${count}`;
+
         this.shapes.push({ ...this.current });
         this.saveToLocalStorage();
       }
